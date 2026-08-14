@@ -1,0 +1,378 @@
+Combining Audio + Images → Video (Technical Guide)
+The Pipeline (What Your Poster Does)
+Verse Audio Files (per ayah) + Background Image(s)
+         │
+         ��
+FFmpeg concat (audio) → Single audio track
+         │
+         ��
+FFmpeg: loop image(s) + map audio → MP4 (H.264/AAC)
+         │
+         ��
+Optional: Add text overlays (verse numbers, Arabic/translation)
+
+
+Core FFmpeg Commands
+#### Step 1: Concatenate Verse Audio Files
+# Create file list (verse_01.mp3, verse_02.mp3, ...)
+cat > audio_list.txt <<EOF
+file 'verse_01.mp3'
+file 'verse_02.mp3'
+file 'verse_03.mp3'
+EOF
+
+# Concatenate without re-encoding (fast, lossless)
+ffmpeg -f concat -safe 0 -i audio_list.txt -c copy combined_audio.mp3
+
+
+#### Step 2: Create Video from Image + Audio
+# Single static image (loop) + audio
+ffmpeg -loop 1 -i background.jpg -i combined_audio.mp3 \
+  -c:v libx264 -tune stillimage -c:a aac -b:a 128k \
+  -pix_fmt yuv420p -shortest output.mp4
+
+# Multiple images (one per verse) - needs filter_complex
+ffmpeg -i combined_audio.mp3 \
+  -i verse_01.jpg -i verse_02.jpg -i verse_03.jpg \
+  -filter_complex "
+    [1:v]scale=1080:1920,setsar=1[v1];
+    [2:v]scale=1080:1920,setsar=1[v2];
+    [3:v]scale=1080:1920,setsar=1[v3];
+    [v1][v2][v3]concat=n=3:v=1:a=0[outv]
+  " \
+  -map "[outv]" -map 0:a \
+  -c:v libx264 -c:a aac -b:a 128k -pix_fmt yuv420p -shortest output.mp4
+
+
+#### Step 3: Add Text Overlays (Optional)
+# Add verse numbers / Arabic text / translation
+ffmpeg -i input.mp4 -vf "
+  drawtext=text='Surah Al-Mulk 67:21':fontfile=/path/to/Amiri.ttf:fontsize=48:fontcolor=white:x=(w-tw)/2:y=100,
+  drawtext=text='وَكَمْ أَهْلَكْنَا قَبْلَهُم مِّن قَرْنٍ':fontfile=/path/to/Amiri.ttf:fontsize=36:fontcolor=white:x=(w-tw)/2:y=200
+" -c:a copy output_with_text.mp4
+
+
+---
+
+Python Wrapper (Reusable) (1/4)
+# video_builder.py
+import subprocess
+from pathlib import Path
+
+def build_quran_video(verse_audio_dir: Path, background_img: Path, output: Path, 
+                      surah_name: str, verse_range: str, reciter: str):
+    """Build Quran recitation video from per-verse audio files."""
+    
+    # 1. Sort audio files numerically
+    audio_files = sorted(verse_audio_dir.glob("*.mp3"), 
+                        key=lambda f: int(f.stem.split("_")[-1]))
+    
+    # 2. Create concat list
+    list_file = verse_audio_dir / "concat_list.txt"
+    list_file.write_text("\n".join(f"file '{f.name}'" for f in audio_files))
+    
+    # 3. Concatenate audio
+    combined_audio = verse_audio_dir / "combined.mp3"
+    subprocess.run([
+        "ffmpeg", "-y", "-f", "concat", "-safe", "0", 
+        "-i", str(list_file), "-c", "copy", str(combined_audio)
+    ], check=True)
+    
+    # 4. Build video (static image loop)
+    subprocess.run([
+        "ffmpeg", "-y", "-loop", "1", "-i", str(background_img),
+        "-i", str(combined_audio),
+        "-c:v", "libx264", "-tune", "stillimage",
+        "-c:a", "aac", "-b:a", "128k",
+        "-pix_fmt", "yuv420p", "-shortest",
+        "-metadata", f"title={surah_name} {verse_range}",
+        "-metadata", f"artist={reciter}",
+        "-metadata", "comment=Quran Recitation",
+        str(output)
+    ], check=True)
+    
+    print(f"��� Video created: {output}")
+
+
+---
+
+Verse-by-Verse Quran Audio (No Bismillah)
+Best Sources
+EveryAyah.com
+• Format: MP3 per verse
+• Bismillah?: ��� Separate file
+• API/Download: Direct URLs
+• Notes: Most popular, multiple reciters
+
+Quranicaudio.com
+• Format: MP3 per verse
+• Bismillah?: ��� Separate
+• API/Download: Direct URLs
+• Notes: High quality, many reciters
+
+Tanzil.net
+• Format: MP3 per verse
+• Bismillah?: ��� Separate
+• API/Download: Bulk download
+• Notes: Clean filenames
+
+Al-Quran.info
+• Format: MP3 per verse
+• Bismillah?: ��� Separate (2/4)
+• API/Download: API + download
+• Notes: Good metadata
+
+---
+
+EveryAyah Direct URLs (No API Key Needed)
+# Base pattern: https://everyayah.com/data/{reciter}/{surah:03d}{ayah:03d}.mp3
+
+RECITERS = {
+    "mishary_rashid": "Mishary_Rashid_Alafasy_128kbps",
+    "abdul_basit": "Abdul_Basit_Murattal_128kbps", 
+    "sudais": "Abdurrahmaan_As-Sudais_128kbps",
+    "shuraim": "Saood_ash-Shuraym_128kbps",
+    "hudhaify": "Ahmad_al-Ajmi_128kbps",
+    "maher": "Maher_AlMuaiqly_128kbps",
+}
+
+def get_verse_url(reciter_key: str, surah: int, ayah: int) -> str:
+    reciter = RECITERS[reciter_key]
+    return f"https://everyayah.com/data/{reciter}/{surah:03d}{ayah:03d}.mp3"
+
+# Example: Surah Al-Mulk (67), verses 21-23
+for ayah in range(21, 24):
+    url = get_verse_url("mishary_rashid", 67, ayah)
+    print(f"67:{ayah} → {url}")
+
+
+Output:
+67:21 → https://everyayah.com/data/Mishary_Rashid_Alafasy_128kbps/067021.mp3
+67:22 → https://everyayah.com/data/Mishary_Rashid_Alafasy_128kbps/067022.mp3
+67:23 → https://everyayah.com/data/Mishary_Rashid_Alafasy_128kbps/067023.mp3
+
+
+---
+
+Bulk Download Script
+#!/bin/bash
+# download_surah.sh <reciter> <surah> <start_ayah> <end_ayah>
+
+RECITER="Mishary_Rashid_Alafasy_128kbps"
+SURAH=67
+START=21
+END=23
+
+for ((i=START; i<=END; i++)); do
+    printf -v NUM "%03d%03d" $SURAH $i
+    URL="https://everyayah.com/data/${RECITER}/${NUM}.mp3"
+    curl -s -o "verse_${i}.mp3" "$URL"
+    echo "Downloaded verse $i"
+done
+
+
+---
+
+Alternative: Quran Foundation API (Structured)
+# https://api.quran.foundation/ - Modern API
+import requests
+
+def get_verse_audio(surah: int, ayah: int, reciter: str = "ar.alafasy") -> str:
+    """Returns direct MP3 URL for a verse."""
+    url = f"https://api.quran.foundation/ayah/{surah}/{ayah}"
+    data = requests.get(url).json()
+    return data["audio"][reciter]["url"]
+
+# Usage
+for ayah in range(21, 24):
+    print(get_verse_audio(67, ayah))
+
+
+---
+ (3/4)
+Key Points for Your Poster
+No Bismillah — EveryAyah/Tanzil files are verse-only (Bismillah is separate file 001001.mp3 for Surah 1, or surah:001 for others)
+
+Naming convention — {surah:03d}{ayah:03d}.mp3 sorts correctly
+
+Reciter consistency — Use same reciter for all verses in a video
+
+Cache locally — Download once, reuse (don't hotlink EveryAyah in production)
+
+Your poster already does this — Check services/everyayah.py or similar in your repo
+
+---
+
+Quick Test
+# Test one verse
+curl -I "https://everyayah.com/data/Mishary_Rashid_Alafasy_128kbps/067021.mp3"
+# Should return 200 OK, audio/mpeg
+
+
+Want me to check your repo for the existing audio service and show how to integrate it with the video builder? (4/4)
+ShoaibOS-VM
+APP
+ — 4:30 PM
+⏳ Working — 6 min — iteration 1/25, receiving stream response 
+ShoaibOS-VM
+APP
+ — 4:33 PM
+Guide: Combining Audio + Image → Video (Quran Reels)
+The Pipeline (from quran_reels_automation.py)
+1. FETCH verse-by-verse MP3s from EveryAyah
+       ��
+2. DOWNLOAD & CONCATENATE specific verses (e.g., 67:21-23)
+       ��
+3. TRIM/LOOP to target duration (30s - 1m45s random)
+       ��
+4. SELECT random user sunset image (1080x1080)
+       ��
+5. FFMPEG: Image + Audio → MP4 (h264 + aac)
+
+
+---
+
+Key Code Functions
+# 1. Prepare audio clip (downloads verse MP3s, concatenates, trims)
+def prepare_audio_clip(reciter_name, clip_info, target_duration):
+    # Downloads each verse MP3 from EveryAyah
+    # Concatenates via ffmpeg concat demuxer
+    # Trims/loops to target_duration
+    # Returns: local MP3 path
+
+# 2. Create video (static image + audio)
+def create_video(audio_file, image_file, output_file):
+    cmd = [
+        "ffmpeg", "-y",
+        "-loop", "1", "-i", image_file,      # Static image (loop)
+        "-i", audio_file,                     # Audio track
+        "-c:v", "libx264",                    # H.264 video
+        "-tune", "stillimage",                # Optimize for static image
+        "-c:a", "aac",                        # AAC audio
+        "-b:a", "128k",                       # Audio bitrate
+        "-pix_fmt", "yuv420p",                # Compatibility
+        "-shortest",                          # Stop when audio ends
+        "-r", "25",                           # 25 fps
+        "-vf", "scale=1080:1080:force_original_aspect_ratio=decrease,pad=1080:1080:(ow-iw)/2:(oh-ih)/2",
+        output_file
+    ]
+
+
+---
+
+FFmpeg Command Explained
+-loop 1 -i image.jpg
+• Purpose: Loop single image infinitely
+
+-i audio.mp3
+• Purpose: Input audio
+
+-c:v libx264
+• Purpose: H.264 encoder
+
+-tune stillimage
+• Purpose: Optimize for static image (tiny file size)
+
+-c:a aac -b:a 128k
+• Purpose: AAC audio at 128kbps
+
+-pix_fmt yuv420p
+• Purpose: Standard pixel format (IG compatible)
+ (1/3)
+-shortest
+• Purpose: Stop encoding when shortest stream ends (audio)
+
+-vf scale=1080:1080...
+• Purpose: Force 1080x1080 with padding (IG Reels format)
+
+---
+
+Verse-by-Verse Audio Source (No Bismillah)
+EveryAyah.com - The Source
+Base URL: https://everyayah.com/data/{reciter_folder}/
+Format: {surah:03d}{ayah:03d}.mp3
+
+
+Reciter Folders (No Bismillah Versions)
+Mishary Rashid Alafasy
+• Folder Name: Alafasy_128kbps
+• Quality: 128kbps
+
+Abdul Rehman As-Sudais
+• Folder Name: AbdulRehman_AsSudais_128kbps
+• Quality: 128kbps
+
+Maher Al-Muaiqly
+• Folder Name: Maher_AlMuaiqly_128kbps
+• Quality: 128kbps
+
+Saood Ash-Shuraym
+• Folder Name: Saood_ash-Shuraym_128kbps
+• Quality: 128kbps
+
+Abdullah Basfar
+• Folder Name: Abdullah_Basfar_128kbps
+• Quality: 128kbps
+
+Key: These are verse-by-verse files. Each verse is a separate MP3. No Bismillah included (except verse 1 of each surah which naturally starts with it).
+
+Example URLs
+Surah 67, Verse 21: https://everyayah.com/data/Alafasy_128kbps/067021.mp3
+Surah 67, Verse 22: https://everyayah.com/data/Alafasy_128kbps/067022.mp3
+Surah 67, Verse 23: https://everyayah.com/data/Alafasy_128kbps/067023.mp3
+
+
+Archive.org Mirrors (Backup)
+https://archive.org/download/everyayah.com__Alafasy_128kbps/
+https://archive.org/download/everyayah.com__AbdulRehman_AsSudais_128kbps/
+
+
+---
+
+How the Code Handles "No Bismillah"
+# In prepare_audio_clip():
+# 1. Downloads ONLY the requested verse range (e.g., 21-23)
+# 2. Does NOT download verse 1 (which would have Bismillah)
+# 3. Concatenates exactly the verses you specify
+# 4. No post-processing removal needed - source files are clean per-verse
+
+
+---
+
+Your 3 Qaris in the Automation
+Othman Al-Haddad
+• Folder (in code): Othman_AlHaddad
+• EveryAyah Folder: Need to verify exact folder name
+
+Abdul Rehman Masood (2/3)
+• Folder (in code): Abdul_Rehman_Masood
+• EveryAyah Folder: Likely AbdulRehman_Masood_128kbps
+
+Mishary Rashid
+• Folder (in code): Mishary_Rashid
+• EveryAyah Folder: Alafasy_128kbps
+
+Check /tmp/quran_audio_clips/ after a run to see which folders were actually downloaded.
+
+---
+
+Quick Test (Manual)
+# Download 3 verses
+mkdir -p test_audio
+cd test_audio
+wget https://everyayah.com/data/Alafasy_128kbps/067021.mp3
+wget https://everyayah.com/data/Alafasy_128kbps/067022.mp3
+wget https://everyayah.com/data/Alafasy_128kbps/067023.mp3
+
+# Create concat list
+printf "file '067021.mp3'\nfile '067022.mp3'\nfile '067023.mp3'\n" > list.txt
+
+# Concatenate
+ffmpeg -f concat -safe 0 -i list.txt -c copy combined.mp3
+
+# Make video with image
+ffmpeg -loop 1 -i sunset.jpg -i combined.mp3 \
+  -c:v libx264 -tune stillimage -c:a aac -b:a 128k \
+  -pix_fmt yuv420p -shortest -r 25 \
+  -vf "scale=1080:1080:force_original_aspect_ratio=decrease,pad=1080:1080:(ow-iw)/2:(oh-ih)/2" \
+  output.mp4
