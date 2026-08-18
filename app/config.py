@@ -45,6 +45,9 @@ CF_ACCOUNT_ID: str = _get("CF_ACCOUNT_ID", "")
 # ── Pollinations ──────────────────────────────────────────────
 POLLINATIONS_API_KEY: str = _get("POLLINATIONS_API_KEY", "")
 
+# ── Pexels ────────────────────────────────────────────────────
+PEXELS_API_KEY: str = _get("PEXELS_API_KEY", "")
+
 # ── Paths ─────────────────────────────────────────────────────
 UPLOAD_MEDIA_DIR: Path = Path(_get("UPLOAD_MEDIA_DIR", "./upload_media")).resolve()
 TEMP_DIR: Path = Path(_get("TEMP_DIR", "./junk")).resolve()

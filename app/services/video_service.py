@@ -66,29 +66,44 @@ def _get_duration(path: Path) -> float:
     cmd = ["ffprobe", "-v", "error", "-show_entries", "format=duration", "-of", "default=noprint_wrappers=1:nokey=1", str(path)]
     return float(subprocess.check_output(cmd).decode().strip())
 
-def fetch_web_video(target_duration: int = 55) -> Path:
+def fetch_web_video(target_duration: int = 50) -> Path:
     """
-    Downloads multiple distinct nature clips and concatenates them into a single
+    Downloads random copyright-free nature videos from Pexels API to create a 
     background video long enough to cover 'target_duration' seconds.
     Each clip is ~5s. We need ceil(target_duration/5) clips.
     Scenes change every 5 seconds for a dynamic reel look.
     """
+    import requests
+    
     config.VIDEO_DIR.parent.mkdir(parents=True, exist_ok=True)
     out_path = config.TEMP_DIR / "downloaded_web_video.mp4"
     if out_path.exists():
         out_path.unlink()
 
-    # How many 5-sec clips do we need to cover the full duration?
-    clips_needed = max(3, (target_duration + 4) // 5)  # at least 3 for variety
-    logger.info("Need %d clips to cover %ds...", clips_needed, target_duration)
+    pexel_key = config.PEXELS_API_KEY
+    if not pexel_key:
+        logger.warning("PEXELS_API_KEY not found in .env! Falling back to local upload_media/")
+        return pick_random_media("video")
+
+    clips_needed = max(3, (target_duration + 4) // 5)
+    logger.info("Need %d Pexels clips to cover %ds...", clips_needed, target_duration)
 
     clips = []
     used_queries = set()
+    
+    # Clean queries without youtube hashtags
+    PEXELS_QUERIES = [
+        "sunset aesthetic", "desert drone", "train passing by river",
+        "rain drops window", "rain forest", "drone ocean waves",
+        "snow falling", "autumn leaves falling", "mountain stream",
+        "campfire burning", "stars night sky lapse", "aurora borealis",
+        "clouds moving fast", "city lights night drone", "calm ocean"
+    ]
+    
     for i in range(clips_needed):
-        # Always pick a DIFFERENT query for each clip so scenes are distinct
-        remaining_queries = [q for q in NATURE_QUERIES if q not in used_queries]
+        remaining_queries = [q for q in PEXELS_QUERIES if q not in used_queries]
         if not remaining_queries:
-            remaining_queries = NATURE_QUERIES  # reset if exhausted
+            remaining_queries = PEXELS_QUERIES
         q = random.choice(remaining_queries)
         used_queries.add(q)
 
@@ -96,20 +111,47 @@ def fetch_web_video(target_duration: int = 55) -> Path:
         if clip_path.exists():
             clip_path.unlink()
 
-        cmd = [
-            "yt-dlp",
-            f"ytsearch1:creative commons {q}",
-            "--download-sections", "*00:00:02-00:00:07",  # skip first 2s (logos/intros)
-            "-f", "bestvideo[height<=1080][ext=mp4]",
-            "-o", str(clip_path)
-        ]
-        logger.info("Fetching clip %d/%d: '%s'", i+1, clips_needed, q[:40])
-        subprocess.run(cmd, capture_output=True, text=True)
-        if clip_path.exists() and clip_path.stat().st_size > 1000:
-            clips.append(clip_path)
+        logger.info("Fetching clip %d/%d from Pexels: '%s'", i+1, clips_needed, q)
+        try:
+            resp = requests.get(
+                "https://api.pexels.com/videos/search",
+                headers={"Authorization": pexel_key},
+                params={"query": q, "per_page": 15, "orientation": "portrait", "size": "medium"},
+                timeout=20
+            )
+            resp.raise_for_status()
+            data = resp.json()
+            
+            if not data.get("videos"):
+                logger.warning("No Pexels videos found for '%s'", q)
+                continue
+                
+            video = random.choice(data["videos"])
+            # Get video file with portrait resolution closest to 1080x1920
+            video_files = [f for f in video["video_files"] if f.get("file_type") == "video/mp4"]
+            if not video_files:
+                continue
+                
+            # Sort by height to get the best quality available
+            video_files.sort(key=lambda x: x.get("height", 0), reverse=True)
+            best_link = video_files[0]["link"]
+            
+            # Download and trim to 5 seconds
+            cmd = [
+                "ffmpeg", "-y", "-i", best_link,
+                "-t", "5",
+                "-c", "copy",
+                str(clip_path)
+            ]
+            subprocess.run(cmd, capture_output=True)
+            
+            if clip_path.exists() and clip_path.stat().st_size > 1000:
+                clips.append(clip_path)
+        except Exception as exc:
+            logger.error("Failed to fetch Pexels video: %s", exc)
 
     if not clips:
-        logger.error("Failed to download any web video clips.")
+        logger.error("Failed to download any Pexels video clips. Falling back to local media.")
         return pick_random_media("video")
 
     if len(clips) == 1:
