@@ -9,7 +9,7 @@ SCOPES = ['https://www.googleapis.com/auth/youtube.upload']
 def main():
     creds = None
     token_path = 'youtube_token.json'
-    client_secrets_file = 'client_secrets.json'
+    client_secrets_file = 'client_secret_3.json'
     
     if not os.path.exists(client_secrets_file):
         print(f"Error: {client_secrets_file} not found in this directory.")

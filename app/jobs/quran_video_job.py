@@ -11,15 +11,21 @@ Main automation job:
 """
 import logging
 import random
+import os
 
 from app import config
-from app.services import audio_service, video_service, posting_service
+from app.services import audio_service, video_service, posting_service, image_gen_service
 from app.jobs import post_tracker
 
 logger = logging.getLogger(__name__)
 
 
-def run_quran_post_job() -> dict:
+def run_quran_post_job(
+    qari_index: int | None = None,
+    media_type: str = "any",
+    ai_prompt: str | None = None,
+    audio_mode: str = "heavy",  # "heavy", "minor", or "original"
+) -> dict:
     """
     Execute one full post cycle.
     Returns a result dict with status, post IDs, and details.
@@ -29,36 +35,61 @@ def run_quran_post_job() -> dict:
 
     try:
         # ── 1. Pick Qari ─────────────────────────────────────
-        qari_idx = post_tracker.get_next_qari_index()
+        if qari_index is None:
+            qari_idx = post_tracker.get_next_qari_index(len(config.QARIS))
+        else:
+            qari_idx = qari_index
+            
         qari = config.QARIS[qari_idx]
         reciter_name = qari["name"]
         reciter_folder = qari["folder"]
+        is_youtube = qari.get("is_youtube", False)
         logger.info("🎙️  Reciter: %s (%s)", reciter_name, reciter_folder)
-
-        # ── 2. Pick verse range ───────────────────────────────
-        if not config.VERSE_POOL:
-            raise RuntimeError("VERSE_POOL is empty — check .env")
-        surah, start_ayah, end_ayah = random.choice(config.VERSE_POOL)
-        surah_name = config.SURAH_NAMES.get(surah, f"Surah {surah}")
-        logger.info("📖  %s (%d:%d–%d)", surah_name, surah, start_ayah, end_ayah)
 
         # ── 3. Pick duration ──────────────────────────────────
         target_duration = random.randint(config.MIN_DURATION, config.MAX_DURATION)
         logger.info("⏱️   Target duration: %ds", target_duration)
 
-        # ── 4. Download + build audio ─────────────────────────
-        audio_path = audio_service.build_audio_clip(
-            reciter_folder=reciter_folder,
-            surah=surah,
-            start_ayah=start_ayah,
-            end_ayah=end_ayah,
-            target_duration=target_duration,
-        )
+        # ── 2 & 4. Download + build audio ─────────────────────
+        if is_youtube:
+            surah = 0
+            start_ayah = 0
+            end_ayah = 0
+            surah_name = "Beautiful Recitation"
+            logger.info("📖  Fetching from archive.org directly")
+            audio_path = audio_service.fetch_archive_qari_chunk(reciter_name, target_duration)
+        else:
+            if not config.VERSE_POOL:
+                raise RuntimeError("VERSE_POOL is empty — check .env")
+            surah, start_ayah, end_ayah = random.choice(config.VERSE_POOL)
+            surah_name = config.SURAH_NAMES.get(surah, f"Surah {surah}")
+            logger.info("📖  %s (%d:%d–%d)", surah_name, surah, start_ayah, end_ayah)
+
+            audio_path = audio_service.build_audio_clip(
+                reciter_folder=reciter_folder,
+                surah=surah,
+                start_ayah=start_ayah,
+                end_ayah=end_ayah,
+                target_duration=target_duration,
+            )
+            
         logger.info("🎵  Audio ready: %s", audio_path.name)
 
         # ── 5. Build video ────────────────────────────────────
-        image_path = video_service.pick_random_image()
-        video_path = video_service.build_video(audio_path=audio_path, image_path=image_path)
+        if media_type == "ai" and ai_prompt:
+            logger.info("🤖 Generating AI image background...")
+            media_path = image_gen_service.generate_image(prompt=ai_prompt)
+        elif media_type == "web_video":
+            logger.info("🌍 Downloading copyright-free background video (multi-clip)...")
+            media_path = video_service.fetch_web_video(target_duration=target_duration)
+        else:
+            media_path = video_service.pick_random_media(media_type)
+
+        video_path = video_service.build_video(
+            audio_path=audio_path,
+            media_path=media_path,
+            audio_mode=audio_mode,
+        )
         logger.info("🎬  Video ready: %s", video_path.name)
 
         # ── 6. Construct public URL ───────────────────────────
@@ -96,13 +127,23 @@ def run_quran_post_job() -> dict:
             ig_post_id=ig_id,
             fb_post_id=fb_id,
             status=status,
-            notes=f"image={image_path.name} yt={yt_id}",
+            notes=f"media={media_path.name} yt={yt_id}",
         )
 
         logger.info(
             "✅ Job done — %s | IG: %s | FB: %s | YT: %s",
             status, ig_id or "❌", fb_id or "❌", yt_id or "❌",
         )
+
+        # ── 10. Cleanup ────────────────────────────────────────
+        try:
+            if audio_path and audio_path.exists():
+                os.remove(audio_path)
+            if video_path and video_path.exists():
+                os.remove(video_path)
+            logger.info("🧹 Cleaned up junk audio/video files")
+        except Exception as e:
+            logger.error("Failed to clean up junk files: %s", e)
 
         return {
             "status": status,
@@ -136,11 +177,23 @@ def run_quran_post_job() -> dict:
 # ─────────────────────────────────────────────────────────────
 
 def _build_caption(surah: int, surah_name: str, start: int, end: int, reciter: str) -> str:
+    if surah == 0:
+        return (
+            f"✨ {surah_name}\n\n"
+            f"🎙️ Reciter: {reciter}\n"
+            f"🤲 May Allah accept this from us\n\n"
+            f"#Quran #QuranRecitation #IslamicContent\n"
+            f"#QuranReels #QuranVerse #SpiritualContent\n"
+            f"#Islam #Muslims #DailyQuran #QuranDaily"
+        )
+        
     tag_name = surah_name.replace("'", "").replace("-", "").replace(" ", "")
     return (
         f"✨ {surah_name} | Surah {surah}: {start}–{end}\n\n"
         f"🎙️ Reciter: {reciter}\n"
         f"🤲 May Allah accept this from us\n\n"
+        f"🎧 Audio provided by Copyright Free Quran\n"
+        f"🔗 https://sites.google.com/view/copyrightfreequran\n\n"
         f"#Quran #QuranRecitation #{tag_name} #IslamicContent\n"
         f"#QuranReels #Surah{surah} #QuranVerse #SpiritualContent\n"
         f"#Islam #Muslims #DailyQuran #QuranDaily"

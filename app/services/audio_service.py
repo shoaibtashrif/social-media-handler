@@ -24,6 +24,57 @@ def get_verse_url(reciter_folder: str, surah: int, ayah: int) -> str:
     """Return direct MP3 URL for a single verse from EveryAyah."""
     return f"{EVERYAYAH_BASE}/{reciter_folder}/{surah:03d}{ayah:03d}.mp3"
 
+def fetch_archive_qari_chunk(qari_name: str, target_duration: int = 50) -> Path:
+    """
+    Downloads a chunk of recitation directly from archive.org.
+    Bypasses YouTube entirely to avoid 403 Forbidden errors.
+    """
+    import random
+    out_dir = config.AUDIO_DIR / "archive_qari"
+    out_dir.mkdir(parents=True, exist_ok=True)
+    out_path = out_dir / f"{qari_name.replace(' ', '_')}_chunk.mp3"
+    
+    if out_path.exists():
+        out_path.unlink()
+        
+    logger.info("Fetching archive.org audio chunk for %s...", qari_name)
+    
+    if "Mossad" in qari_name:
+        # The archive item is a 50s MP4 file. Download and convert to MP3.
+        url = "https://archive.org/download/abdur-rahman-mossad-yar-hussain/abdur%20rahman%20mossad.mp4"
+        cmd = [
+            "ffmpeg", "-y", "-i", url,
+            "-t", str(target_duration),
+            "-vn", "-acodec", "libmp3lame", "-q:a", "2",
+            str(out_path)
+        ]
+    elif "Haddad" in qari_name:
+        # The archive item has multiple Surah MP3s. Pick one.
+        available_surahs = [
+            "001", "015", "032", "039", "041", "043", "046", "047", "051", "053", "055", "056", "059", 
+            "075", "078", "079", "081", "082", "083", "084", "085", "086", "087", "088", "089", "090", 
+            "091", "092", "093", "094", "095", "096", "098", "099", "100", "102", "103", "104", "105", 
+            "106", "107", "108", "109", "110", "111", "112", "113", "114"
+        ]
+        surah = random.choice(available_surahs)
+        url = f"https://archive.org/download/othman-mashaal-al-haddad/{surah}.mp3"
+        # Since we just want a chunk, download the first N seconds
+        cmd = [
+            "ffmpeg", "-y", "-i", url,
+            "-t", str(target_duration),
+            "-c", "copy",
+            str(out_path)
+        ]
+    else:
+        raise ValueError(f"Unknown archive Qari: {qari_name}")
+
+    result = subprocess.run(cmd, capture_output=True, text=True)
+    if result.returncode != 0 or not out_path.exists():
+        logger.error(f"FFmpeg archive error: {result.stderr[-500:]}")
+        raise RuntimeError(f"Failed to download Archive audio for {qari_name}")
+        
+    return out_path
+
 
 def download_verse(reciter_folder: str, surah: int, ayah: int) -> Path:
     """

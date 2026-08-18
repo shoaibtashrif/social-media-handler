@@ -7,19 +7,6 @@ ENV/
 env.bak/
 venv.bak/
 
-# Secrets & Tokens
-client_secrets.json
-youtube_token.json
-
-# Media & Temp Files
-upload_media/
-temp/
-*.mp4
-*.mp3
-*.jpg
-*.jpeg
-*.png
-
 # Python
 __pycache__/
 *.py[cod]
@@ -44,12 +31,30 @@ share/python-wheels/
 *.egg
 MANIFEST
 
-# Logs
-*.log
-logs/
+# Secrets & Tokens
+client_secret*.json
+youtube_token.json
 
-# IDEs
-.idea/
-.vscode/
-*.swp
-*.swo
+# Media & Temp Files globally
+junk/
+temp/
+*.mp4
+*.mp3
+*.wav
+*.jpg
+*.jpeg
+*.png
+*.webp
+
+# Empty folder structure tracking
+upload_media/*
+!upload_media/.gitkeep
+
+# Database
+*.sqlite3
+app.db
+
+# Exclude random test scripts in the root directory
+test*.py
+batch*.py
+post_manual.py

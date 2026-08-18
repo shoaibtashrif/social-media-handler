@@ -1,13 +1,15 @@
 """
 image_gen_service.py
-Generates AI images using two free backends:
-  1. Pollinations.ai  — no auth needed (uses POLLINATIONS_API_KEY if set for priority)
-  2. HuggingFace Inference API — free tier with HF_TOKEN
-Used for slide-style image posts. Video posts use user-uploaded images instead.
+Generates AI images using a 3-tier fallback chain:
+  1. Cloudflare Workers AI (FLUX.1-schnell)
+  2. HuggingFace Inference API (FLUX.1-schnell)
+  3. Pollinations.ai (Flux)
 """
 import logging
 import time
 import requests
+import urllib.parse
+import base64
 from pathlib import Path
 from datetime import datetime
 
@@ -17,71 +19,95 @@ logger = logging.getLogger(__name__)
 
 
 # ─────────────────────────────────────────────────────────────
-# Pollinations.ai  (primary — no quota, always free)
+# 1. Cloudflare Workers AI (FLUX.1-schnell)
 # ─────────────────────────────────────────────────────────────
+def generate_with_cloudflare(prompt: str) -> bytes | None:
+    if not config.CF_API_TOKEN or not config.CF_ACCOUNT_ID:
+        logger.warning("No CF_API_TOKEN or CF_ACCOUNT_ID, skipping Cloudflare.")
+        return None
 
-def generate_with_pollinations(prompt: str, width: int = 1080, height: int = 1080) -> bytes:
-    """
-    Generate an image via Pollinations.ai.
-    Returns raw image bytes (PNG).
-    """
-    import urllib.parse
+    logger.info("Generating via Cloudflare FLUX schnell...")
+    url = f"https://api.cloudflare.com/client/v4/accounts/{config.CF_ACCOUNT_ID}/ai/run/@cf/black-forest-labs/flux-1-schnell"
+    headers = {
+        "Authorization": f"Bearer {config.CF_API_TOKEN}",
+        "Content-Type": "application/json"
+    }
+    payload = {"prompt": prompt}
 
-    encoded = urllib.parse.quote(prompt)
-    # Add seed for reproducibility + nologo for clean output
-    url = (
-        f"https://image.pollinations.ai/prompt/{encoded}"
-        f"?width={width}&height={height}&nologo=true&model=flux"
-    )
-    logger.info("Pollinations request: %s", url[:120])
-    resp = requests.get(url, timeout=90)
-    resp.raise_for_status()
-    return resp.content
+    try:
+        resp = requests.post(url, headers=headers, json=payload, timeout=120)
+        resp.raise_for_status()
+        data = resp.json()
+        if data.get("success"):
+            img_b64 = data["result"]["image"]
+            return base64.b64decode(img_b64)
+        else:
+            logger.warning("Cloudflare error: %s", data.get("errors", "unknown"))
+            return None
+    except Exception as e:
+        logger.warning("Cloudflare failed: %s", e)
+        return None
 
 
 # ─────────────────────────────────────────────────────────────
-# HuggingFace Inference API  (fallback)
+# 2. HuggingFace Inference API (FLUX.1-schnell)
 # ─────────────────────────────────────────────────────────────
-
-_HF_MODEL = "stabilityai/stable-diffusion-2-1"
+_HF_MODEL = "black-forest-labs/FLUX.1-schnell"
 _HF_API_URL = f"https://api-inference.huggingface.co/models/{_HF_MODEL}"
 
-
-def generate_with_huggingface(prompt: str) -> bytes:
-    """
-    Generate an image via HuggingFace Inference API.
-    Returns raw image bytes (JPEG/PNG).
-    Raises RuntimeError if HF_TOKEN is not configured.
-    """
+def generate_with_huggingface(prompt: str) -> bytes | None:
     if not config.HF_TOKEN:
-        raise RuntimeError("HF_TOKEN not set in .env — cannot use HuggingFace backend")
+        logger.warning("No HF_TOKEN found, skipping HuggingFace.")
+        return None
 
+    logger.info("Generating via HuggingFace FLUX schnell...")
     headers = {"Authorization": f"Bearer {config.HF_TOKEN}"}
-    payload = {"inputs": prompt, "parameters": {"width": 1024, "height": 1024}}
+    payload = {
+        "inputs": prompt,
+        "parameters": {"width": 1024, "height": 1024},
+        "options": {"use_cache": False}
+    }
 
-    for attempt in range(3):
-        logger.info("HuggingFace request (attempt %d): %s", attempt + 1, prompt[:80])
-        resp = requests.post(_HF_API_URL, headers=headers, json=payload, timeout=120)
-        if resp.status_code == 503:
-            # Model loading — wait and retry
-            wait = 20 * (attempt + 1)
-            logger.warning("HF model loading, waiting %ds…", wait)
-            time.sleep(wait)
-            continue
+    try:
+        for attempt in range(3):
+            resp = requests.post(_HF_API_URL, headers=headers, json=payload, timeout=120)
+            if resp.status_code == 503:
+                wait = 20 * (attempt + 1)
+                logger.warning("HF model loading, waiting %ds…", wait)
+                time.sleep(wait)
+                continue
+            resp.raise_for_status()
+            return resp.content
+        logger.warning("HuggingFace model unavailable after 3 attempts")
+        return None
+    except Exception as e:
+        logger.warning("HuggingFace failed: %s", e)
+        return None
+
+
+# ─────────────────────────────────────────────────────────────
+# 3. Pollinations.ai (Flux)
+# ─────────────────────────────────────────────────────────────
+def generate_with_pollinations(prompt: str, width: int = 1080, height: int = 1080) -> bytes | None:
+    logger.info("Generating via Pollinations FLUX...")
+    encoded = urllib.parse.quote(prompt)
+    url = f"https://image.pollinations.ai/prompt/{encoded}?width={width}&height={height}&nologo=true&model=flux"
+    
+    try:
+        resp = requests.get(url, timeout=90)
         resp.raise_for_status()
         return resp.content
-
-    raise RuntimeError("HuggingFace model unavailable after 3 attempts")
+    except Exception as e:
+        logger.warning("Pollinations failed: %s", e)
+        return None
 
 
 # ─────────────────────────────────────────────────────────────
-# Unified generator with fallback
+# Unified generator with 3-tier fallback
 # ─────────────────────────────────────────────────────────────
-
 def generate_image(prompt: str, save_to: Path | None = None) -> Path:
     """
-    Generate an image. Tries Pollinations first, falls back to HuggingFace.
-    Saves to save_to (or a temp path) and returns the Path.
+    Fallback chain: Cloudflare -> HuggingFace -> Pollinations
     """
     if save_to is None:
         config.VIDEO_DIR.parent.mkdir(parents=True, exist_ok=True)
@@ -90,17 +116,19 @@ def generate_image(prompt: str, save_to: Path | None = None) -> Path:
 
     save_to.parent.mkdir(parents=True, exist_ok=True)
 
-    img_bytes = None
-    try:
+    # 1. Try Cloudflare
+    img_bytes = generate_with_cloudflare(prompt)
+    
+    # 2. Try HuggingFace
+    if not img_bytes:
+        img_bytes = generate_with_huggingface(prompt)
+        
+    # 3. Try Pollinations
+    if not img_bytes:
         img_bytes = generate_with_pollinations(prompt)
-        logger.info("Generated via Pollinations")
-    except Exception as exc:
-        logger.warning("Pollinations failed: %s — trying HuggingFace", exc)
-        try:
-            img_bytes = generate_with_huggingface(prompt)
-            logger.info("Generated via HuggingFace")
-        except Exception as exc2:
-            raise RuntimeError(f"Both image backends failed: {exc} | {exc2}") from exc2
+
+    if not img_bytes:
+        raise RuntimeError("All 3 image backends (CF, HF, Pollinations) failed.")
 
     save_to.write_bytes(img_bytes)
     logger.info("Image saved: %s", save_to)
@@ -110,7 +138,6 @@ def generate_image(prompt: str, save_to: Path | None = None) -> Path:
 # ─────────────────────────────────────────────────────────────
 # Quran-themed prompt helpers
 # ─────────────────────────────────────────────────────────────
-
 QURAN_PROMPTS = [
     "serene mosque at golden hour, dramatic sky, photorealistic, cinematic lighting",
     "arabic calligraphy art, geometric patterns, dark background, golden ink",

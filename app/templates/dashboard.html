@@ -1,0 +1,305 @@
+{% extends "base.html" %}
+
+{% block title %}Dashboard | Quran Automator{% endblock %}
+
+{% block content %}
+<style>
+    /* Modal styles */
+    .modal-overlay {
+        position: fixed; top: 0; left: 0; right: 0; bottom: 0;
+        background: rgba(0, 0, 0, 0.6); backdrop-filter: blur(5px);
+        display: none; align-items: center; justify-content: center; z-index: 1000;
+    }
+    .modal-overlay.active { display: flex; }
+    .modal {
+        background: var(--bg-secondary); border: 1px solid var(--border);
+        border-radius: 16px; padding: 2rem; width: 100%; max-width: 500px;
+        box-shadow: 0 10px 40px rgba(0,0,0,0.5);
+    }
+    .modal h2 { margin-bottom: 1.5rem; }
+
+    /* Layout Split */
+    .dashboard-layout {
+        display: flex;
+        gap: 2rem;
+        height: calc(100vh - 120px); /* Fill remaining height */
+    }
+    .main-panel {
+        flex: 7;
+        display: flex;
+        flex-direction: column;
+        overflow-y: auto;
+    }
+    .side-panel {
+        flex: 3;
+        display: flex;
+        flex-direction: column;
+        background: #0d1117; /* GitHub Dark terminal color */
+        border-radius: 12px;
+        border: 1px solid var(--border);
+        overflow: hidden;
+    }
+    
+    /* Terminal logs */
+    .log-header {
+        background: #161b22;
+        padding: 0.75rem 1rem;
+        border-bottom: 1px solid var(--border);
+        font-family: monospace;
+        font-weight: bold;
+        color: var(--text-secondary);
+        display: flex;
+        justify-content: space-between;
+    }
+    .log-body {
+        padding: 1rem;
+        font-family: 'Fira Code', 'Courier New', Courier, monospace;
+        font-size: 0.85rem;
+        color: #c9d1d9;
+        overflow-y: auto;
+        flex-grow: 1;
+        white-space: pre-wrap;
+        word-wrap: break-word;
+    }
+    .log-line { margin-bottom: 4px; }
+    .log-info { color: #58a6ff; }
+    .log-error { color: #f85149; font-weight: bold; }
+    .log-warning { color: #d29922; }
+</style>
+
+<div class="dashboard-layout">
+    <!-- Left 70% -->
+    <div class="main-panel">
+        <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 1rem;">
+            <h1 class="page-title" style="margin: 0;">Dashboard</h1>
+            <button class="btn" onclick="openModal()">
+                <i class="fa-solid fa-play"></i> Generate & Post Now
+            </button>
+        </div>
+
+        <div class="card" style="flex-grow: 1; margin: 0; overflow-y: auto;">
+            <h2><i class="fa-solid fa-clock-rotate-left"></i> Posting History</h2>
+            <div class="table-container">
+                <table>
+                    <thead>
+                        <tr>
+                            <th>Date</th>
+                            <th>Reciter</th>
+                            <th>Verses</th>
+                            <th>Platforms</th>
+                            <th>Status</th>
+                        </tr>
+                    </thead>
+                    <tbody id="history-body">
+                        {% for post in posts %}
+                        <tr>
+                            <td>{{ post.created_at.strftime('%Y-%m-%d %H:%M') }}</td>
+                            <td>{{ post.reciter }}</td>
+                            <td>{{ post.surah_name }} ({{ post.verses }})</td>
+                            <td>
+                                {% if post.ig_post_id and post.ig_post_id != 'failed' %}
+                                    <i class="fa-brands fa-instagram" style="color: #E1306C; margin-right:5px;" title="IG Success"></i>
+                                {% else %}
+                                    <i class="fa-brands fa-instagram" style="color: var(--text-secondary); opacity: 0.3; margin-right:5px;" title="IG Failed/Missing"></i>
+                                {% endif %}
+
+                                {% if post.fb_post_id and post.fb_post_id != 'failed' %}
+                                    <i class="fa-brands fa-facebook" style="color: #1877F2; margin-right:5px;" title="FB Success"></i>
+                                {% else %}
+                                    <i class="fa-brands fa-facebook" style="color: var(--text-secondary); opacity: 0.3; margin-right:5px;" title="FB Failed/Missing"></i>
+                                {% endif %}
+
+                                {% if post.yt_post_id and post.yt_post_id != 'failed' %}
+                                    <i class="fa-brands fa-youtube" style="color: #FF0000;" title="YT Success"></i>
+                                {% else %}
+                                    <i class="fa-brands fa-youtube" style="color: var(--text-secondary); opacity: 0.3;" title="YT Failed/Missing"></i>
+                                {% endif %}
+                            </td>
+                            <td>
+                                <span class="badge {{ 'success' if post.status == 'success' else 'error' }}">
+                                    {{ post.status }}
+                                </span>
+                            </td>
+                        </tr>
+                        {% else %}
+                        <tr>
+                            <td colspan="5" style="text-align: center; color: var(--text-secondary);">No posts yet.</td>
+                        </tr>
+                        {% endfor %}
+                    </tbody>
+                </table>
+            </div>
+        </div>
+    </div>
+
+    <!-- Right 30% -->
+    <div class="side-panel">
+        <div class="log-header">
+            <span><i class="fa-solid fa-terminal"></i> Live Server Logs</span>
+            <span id="log-status" style="color: #3fb950; font-size: 0.8rem;">● Connected</span>
+        </div>
+        <div class="log-body" id="logWindow">
+            <div class="log-line" style="color: #8b949e;">Waiting for background jobs...</div>
+        </div>
+    </div>
+</div>
+
+<!-- Posting Modal -->
+<div class="modal-overlay" id="postModal">
+    <div class="modal">
+        <h2>Manual Post Generation</h2>
+        <form id="postForm" onsubmit="triggerPost(event)">
+            <div class="form-group">
+                <label>Reciter</label>
+                <select id="qariIndex">
+                    <option value="random">Random (Surprise Me)</option>
+                    <option value="0">Mishary Rashid Alafasy</option>
+                    <option value="1">Abdullah Basfar</option>
+                    <option value="2">Muhammad Ayyoub</option>
+                    <option value="3">Othman Al Haddad</option>
+                    <option value="4">Abdur Rahman Mossad</option>
+                </select>
+            </div>
+
+            <div class="form-group">
+                <label>Background Media Type</label>
+                <select id="mediaType" onchange="toggleAiPrompt()">
+                    <option value="web_video" selected>Auto-Download Nature Video (Multi-Clip Reel)</option>
+                    <option value="video">Pick Random Local Video (upload_media/)</option>
+                    <option value="image">Pick Random Local Image (upload_media/)</option>
+                    <option value="ai">Generate AI Image (Pollinations)</option>
+                </select>
+            </div>
+
+            <div class="form-group">
+                <label>🎙️ Audio Editing Mode</label>
+                <select id="audioMode">
+                    <option value="heavy">Heavy Editing (Slow + Reverb + Rain) — Default</option>
+                    <option value="minor">Minor Editing (Slight Slow + Soft Rain)</option>
+                    <option value="original">Original Audio (No Processing)</option>
+                </select>
+            </div>
+            
+            <div class="form-group" id="aiPromptGroup" style="display: none;">
+                <label>AI Image Prompt</label>
+                <textarea id="aiPrompt" rows="3" placeholder="e.g. A beautiful Islamic mosque at sunset with cinematic lighting"></textarea>
+            </div>
+
+            <div style="display: flex; gap: 1rem; margin-top: 2rem;">
+                <button type="button" class="btn" style="background: transparent; border: 1px solid var(--border); color: var(--text-secondary);" onclick="closeModal()">Cancel</button>
+                <button type="submit" id="post-now-btn" class="btn" style="flex: 1; justify-content: center;">
+                    <i class="fa-solid fa-rocket"></i> Start Job
+                </button>
+            </div>
+        </form>
+    </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+    function openModal() { document.getElementById('postModal').classList.add('active'); }
+    function closeModal() { document.getElementById('postModal').classList.remove('active'); }
+    function toggleAiPrompt() {
+        const type = document.getElementById('mediaType').value;
+        document.getElementById('aiPromptGroup').style.display = type === 'ai' ? 'block' : 'none';
+    }
+
+    async function triggerPost(e) {
+        e.preventDefault();
+        const btn = document.getElementById('post-now-btn');
+        btn.innerHTML = '<i class="fa-solid fa-spinner fa-spin"></i> Scheduling...';
+        btn.disabled = true;
+
+        const mediaType = document.getElementById('mediaType').value;
+        const aiPrompt = document.getElementById('aiPrompt').value;
+        const qariVal = document.getElementById('qariIndex').value;
+        const qariIndex = qariVal === 'random' ? null : parseInt(qariVal);
+        const audioMode = document.getElementById('audioMode').value;
+
+        try {
+            const res = await fetch('/api/post-now', { 
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ 
+                    media_type: mediaType, 
+                    ai_prompt: aiPrompt,
+                    qari_index: qariIndex,
+                    audio_mode: audioMode
+                })
+            });
+            const data = await res.json();
+            
+            if (res.ok) {
+                showToast("Job Scheduled! Watch the Live Logs terminal.");
+                closeModal();
+                startPolling();
+            } else {
+                showToast("Failed to schedule job.", "error");
+            }
+        } catch (err) {
+            showToast("Network error.", "error");
+        } finally {
+            btn.innerHTML = '<i class="fa-solid fa-rocket"></i> Start Job';
+            btn.disabled = false;
+        }
+    }
+
+    // Polling logic for DB update
+    let pollInterval;
+    let initialPostCount = {{ posts|length }};
+    
+    function startPolling() {
+        if (pollInterval) clearInterval(pollInterval);
+        pollInterval = setInterval(async () => {
+            try {
+                const res = await fetch('/api/notifications');
+                const data = await res.json();
+                
+                if (data.latest_count > initialPostCount) {
+                    clearInterval(pollInterval);
+                    setTimeout(() => window.location.reload(), 3000); // Reload after seeing the logs finish
+                }
+            } catch (e) { console.error(e); }
+        }, 3000);
+    }
+
+    // SSE Log streaming
+    const logWindow = document.getElementById('logWindow');
+    const logStatus = document.getElementById('log-status');
+    
+    function connectLogs() {
+        const eventSource = new EventSource('/api/logs/stream');
+        
+        eventSource.onmessage = function(event) {
+            const line = document.createElement('div');
+            line.className = 'log-line';
+            let txt = event.data;
+            
+            // Basic syntax highlighting
+            if (txt.includes('[INFO]')) txt = txt.replace('[INFO]', '<span class="log-info">[INFO]</span>');
+            else if (txt.includes('[ERROR]')) txt = txt.replace('[ERROR]', '<span class="log-error">[ERROR]</span>');
+            else if (txt.includes('[WARNING]')) txt = txt.replace('[WARNING]', '<span class="log-warning">[WARNING]</span>');
+            
+            line.innerHTML = txt;
+            logWindow.appendChild(line);
+            logWindow.scrollTop = logWindow.scrollHeight; // Auto-scroll
+        };
+        
+        eventSource.onerror = function() {
+            logStatus.style.color = '#f85149';
+            logStatus.innerText = '● Disconnected';
+            eventSource.close();
+            // Reconnect after 5 seconds
+            setTimeout(connectLogs, 5000);
+        };
+        
+        eventSource.onopen = function() {
+            logStatus.style.color = '#3fb950';
+            logStatus.innerText = '● Connected';
+        };
+    }
+    
+    connectLogs();
+</script>
+{% endblock %}

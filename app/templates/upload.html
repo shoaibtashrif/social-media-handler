@@ -1,0 +1,72 @@
+{% extends "base.html" %}
+
+{% block title %}Custom Upload | Quran Automator{% endblock %}
+
+{% block content %}
+<h1 class="page-title">Custom Upload</h1>
+
+<div class="card" style="max-width: 600px;">
+    <form id="upload-form" onsubmit="handleUpload(event)">
+        <div class="form-group">
+            <label>Video File (.mp4 or .mov)</label>
+            <input type="file" id="video_file" accept="video/mp4,video/quicktime" required style="padding: 1rem; border: 2px dashed var(--border); background: transparent;">
+        </div>
+
+        <div class="form-group">
+            <label>Caption / Description</label>
+            <textarea id="caption" rows="5" placeholder="Write your amazing caption here...&#10;First line will be used as YouTube Title." required></textarea>
+        </div>
+
+        <button type="submit" id="upload-btn" class="btn" style="width: 100%; justify-content: center; margin-top: 1rem;">
+            <i class="fa-solid fa-cloud-arrow-up"></i> Upload & Post to All
+        </button>
+    </form>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+    async function handleUpload(e) {
+        e.preventDefault();
+        
+        const btn = document.getElementById('upload-btn');
+        const originalText = btn.innerHTML;
+        const fileInput = document.getElementById('video_file');
+        const captionInput = document.getElementById('caption');
+        
+        if (!fileInput.files[0]) {
+            showToast("Please select a video file.", "error");
+            return;
+        }
+
+        btn.innerHTML = '<i class="fa-solid fa-spinner fa-spin"></i> Uploading & Posting...';
+        btn.disabled = true;
+
+        const formData = new FormData();
+        formData.append("file", fileInput.files[0]);
+        formData.append("caption", captionInput.value);
+
+        try {
+            const res = await fetch('/api/manual-upload', {
+                method: 'POST',
+                body: formData
+            });
+            
+            const data = await res.json();
+            
+            if (res.ok && data.status === "success") {
+                showToast("Video posted successfully and deleted from server!");
+                fileInput.value = "";
+                captionInput.value = "";
+            } else {
+                showToast(data.message || "Upload failed.", "error");
+            }
+        } catch (err) {
+            showToast("Network error during upload.", "error");
+        } finally {
+            btn.innerHTML = originalText;
+            btn.disabled = false;
+        }
+    }
+</script>
+{% endblock %}

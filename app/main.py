@@ -6,16 +6,25 @@ import logging
 from contextlib import asynccontextmanager
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.staticfiles import StaticFiles
 
 from app import config
-from app.routers import health, media, post, token
-from app.services import scheduler_service, token_service
+from app.routers import health, media, post, token, ui
+from app.services import scheduler_service, token_service, log_service
+from app.database import engine, Base
+
+# Create DB tables
+Base.metadata.create_all(bind=engine)
 
 # ── Logging ───────────────────────────────────────────────────
 logging.basicConfig(
     level=logging.INFO,
     format="%(asctime)s [%(levelname)s] %(name)s: %(message)s",
     datefmt="%Y-%m-%d %H:%M:%S",
+    handlers=[
+        logging.StreamHandler(),
+        log_service.sse_handler
+    ]
 )
 logger = logging.getLogger(__name__)
 
@@ -70,13 +79,16 @@ app.add_middleware(
 )
 
 # ── Routers ───────────────────────────────────────────────────
+app.mount("/static", StaticFiles(directory="app/static"), name="static")
+
+app.include_router(ui.router)
 app.include_router(health.router)
 app.include_router(media.router)
 app.include_router(post.router)
 app.include_router(token.router)
 
 
-@app.get("/", tags=["root"])
+@app.get("/api", tags=["root"])
 def root():
     return {
         "service": "Quran Social Media Automation",

@@ -9,17 +9,26 @@ from apscheduler.triggers.cron import CronTrigger
 import pytz
 
 from app import config
+from app.services.settings_service import get_setting
 
 logger = logging.getLogger(__name__)
 
 _scheduler: BackgroundScheduler | None = None
 
 
-def _job_wrapper():
+def _job_wrapper(qari: str = "random"):
     """Wrapper so import happens at call time (avoids circular imports)."""
+    from app.services.settings_service import get_setting
+    if not get_setting("auto_upload", True):
+        logger.info("Auto upload is disabled in settings. Skipping scheduled job.")
+        return
+
     from app.jobs.quran_video_job import run_quran_post_job
     try:
-        run_quran_post_job()
+        qari_index = None
+        if qari != "random" and qari.isdigit():
+            qari_index = int(qari)
+        run_quran_post_job(qari_index=qari_index)
     except Exception as exc:
         logger.error("Scheduled job failed: %s", exc)
 
@@ -33,6 +42,49 @@ def _token_refresh_wrapper():
     except Exception as exc:
         logger.error("Midnight token refresh failed: %s", exc)
 
+def _schedule_jobs():
+    global _scheduler
+    if not _scheduler:
+        return
+    
+    # Remove existing quran post jobs
+    for job in _scheduler.get_jobs():
+        if job.id.startswith("quran_post_"):
+            _scheduler.remove_job(job.id)
+
+    tz = pytz.timezone(config.TIMEZONE)
+    schedule = get_setting("schedule", [
+        {"time": "09:00", "qari": "random"},
+        {"time": "12:30", "qari": "random"},
+        {"time": "16:30", "qari": "random"},
+        {"time": "21:00", "qari": "random"}
+    ])
+
+    for i, item in enumerate(schedule):
+        time_str = item.get("time")
+        qari = item.get("qari", "random")
+        if not time_str:
+            continue
+            
+        try:
+            hour, minute = time_str.strip().split(":")
+            trigger = CronTrigger(hour=int(hour), minute=int(minute), timezone=tz)
+            _scheduler.add_job(
+                _job_wrapper,
+                args=[qari],
+                trigger=trigger,
+                id=f"quran_post_{i}_{time_str.replace(':', '')}",
+                replace_existing=True,
+                misfire_grace_time=300,  # 5 min grace window
+            )
+            logger.info("Scheduled post at %s (%s) with qari=%s", time_str, config.TIMEZONE, qari)
+        except Exception as exc:
+            logger.error("Could not schedule post at %s: %s", time_str, exc)
+
+def reload_scheduler():
+    """Reloads job timings from DB."""
+    logger.info("Reloading scheduler settings from database...")
+    _schedule_jobs()
 
 def start_scheduler() -> None:
     global _scheduler
@@ -40,25 +92,7 @@ def start_scheduler() -> None:
     tz = pytz.timezone(config.TIMEZONE)
     _scheduler = BackgroundScheduler(timezone=tz)
 
-    post_times = config.POST_TIMES[: config.POSTS_PER_DAY]  # honour POSTS_PER_DAY cap
-    if not post_times:
-        logger.warning("POST_TIMES is empty — no scheduled posts will run")
-        return
-
-    for time_str in post_times:
-        try:
-            hour, minute = time_str.strip().split(":")
-            trigger = CronTrigger(hour=int(hour), minute=int(minute), timezone=tz)
-            _scheduler.add_job(
-                _job_wrapper,
-                trigger=trigger,
-                id=f"quran_post_{time_str.replace(':', '')}",
-                replace_existing=True,
-                misfire_grace_time=300,  # 5 min grace window
-            )
-            logger.info("Scheduled post at %s (%s)", time_str, config.TIMEZONE)
-        except Exception as exc:
-            logger.error("Could not schedule post at %s: %s", time_str, exc)
+    _schedule_jobs()
 
     # Daily midnight token refresh
     _scheduler.add_job(

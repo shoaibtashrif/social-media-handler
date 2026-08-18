@@ -47,7 +47,7 @@ POLLINATIONS_API_KEY: str = _get("POLLINATIONS_API_KEY", "")
 
 # ── Paths ─────────────────────────────────────────────────────
 UPLOAD_MEDIA_DIR: Path = Path(_get("UPLOAD_MEDIA_DIR", "./upload_media")).resolve()
-TEMP_DIR: Path = Path(_get("TEMP_DIR", "./temp")).resolve()
+TEMP_DIR: Path = Path(_get("TEMP_DIR", "./junk")).resolve()
 AUDIO_DIR: Path = TEMP_DIR / "audio"
 VIDEO_DIR: Path = TEMP_DIR / "video"
 LOG_DIR: Path = TEMP_DIR / "logs"
@@ -61,14 +61,16 @@ TIMEZONE: str = _get("TIMEZONE", "Asia/Karachi")
 
 # ── Qari config ───────────────────────────────────────────────
 QARIS: list[dict] = [
-    {"name": _get("QARI_1_NAME", "Mishary Rashid Alafasy"), "folder": _get("QARI_1_FOLDER", "Alafasy_128kbps")},
-    {"name": _get("QARI_2_NAME", "Abdurrahman As-Sudais"), "folder": _get("QARI_2_FOLDER", "AbdulRehman_AsSudais_128kbps")},
-    {"name": _get("QARI_3_NAME", "Maher Al-Muaiqly"),      "folder": _get("QARI_3_FOLDER", "Maher_AlMuaiqly_128kbps")},
+    {"name": _get("QARI_1_NAME", "Ali Al-Hudhaify"),        "folder": _get("QARI_1_FOLDER", "Hudhaify_128kbps"), "is_youtube": False},
+    {"name": _get("QARI_2_NAME", "Abdullah Basfar"),        "folder": _get("QARI_2_FOLDER", "Abdullah_Basfar_192kbps"), "is_youtube": False},
+    {"name": _get("QARI_3_NAME", "Muhammad Ayyoub"),        "folder": _get("QARI_3_FOLDER", "Muhammad_Ayyoub_128kbps"), "is_youtube": False},
+    {"name": "Othman Al Haddad",                            "folder": "youtube_othman", "is_youtube": True},
+    {"name": "Abdur Rahman Mossad",                         "folder": "youtube_mossad", "is_youtube": True},
 ]
 
 # ── Audio / Video ─────────────────────────────────────────────
-MIN_DURATION: int = int(_get("MIN_DURATION", 30))
-MAX_DURATION: int = int(_get("MAX_DURATION", 105))
+MIN_DURATION: int = int(_get("MIN_DURATION", 40))
+MAX_DURATION: int = int(_get("MAX_DURATION", 58))
 
 # ── Verse pool — list of (surah, start_ayah, end_ayah) tuples ─
 def _parse_verse_pool(raw: str) -> list[tuple[int, int, int]]:

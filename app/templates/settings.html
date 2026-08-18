@@ -1,0 +1,123 @@
+{% extends "base.html" %}
+
+{% block title %}Settings | Quran Automator{% endblock %}
+
+{% block content %}
+<h1 class="page-title">Scheduler Settings</h1>
+
+<div class="card" style="max-width: 800px;">
+    <p style="color: var(--text-secondary); margin-bottom: 1.5rem;">
+        Configure your daily posting schedule. All times are in your local timezone (PKT).
+    </p>
+
+    <form id="settings-form" onsubmit="saveSettings(event)">
+        <div style="margin-bottom: 2rem; background: rgba(0,0,0,0.2); padding: 1rem; border-radius: 8px; display: flex; align-items: center; justify-content: space-between;">
+            <div>
+                <strong style="display: block; font-size: 1.1rem; margin-bottom: 0.2rem;">Enable Scheduled Auto-Uploads</strong>
+                <span style="color: var(--text-secondary); font-size: 0.85rem;">If disabled, scheduled jobs will not run. Manual posts will still work.</span>
+            </div>
+            <label class="switch" style="position: relative; display: inline-block; width: 50px; height: 28px;">
+                <input type="checkbox" id="autoUploadToggle" style="opacity: 0; width: 0; height: 0;" {% if settings.get('auto_upload', True) %}checked{% endif %}>
+                <span class="slider round" style="position: absolute; cursor: pointer; top: 0; left: 0; right: 0; bottom: 0; background-color: #ccc; transition: .4s; border-radius: 34px;"></span>
+            </label>
+            <style>
+                /* Switch styles */
+                .switch input:checked + .slider { background-color: #3fb950; }
+                .switch input:focus + .slider { box-shadow: 0 0 1px #3fb950; }
+                .slider:before { position: absolute; content: ""; height: 20px; width: 20px; left: 4px; bottom: 4px; background-color: white; transition: .4s; border-radius: 50%; }
+                .switch input:checked + .slider:before { transform: translateX(22px); }
+            </style>
+        </div>
+
+        <div id="schedule-container">
+            <!-- Rows will be injected here by JS -->
+        </div>
+
+        <div style="display: flex; gap: 1rem; margin-top: 2rem;">
+            <button type="button" class="btn" style="background: rgba(255,255,255,0.1); color: var(--text-primary);" onclick="addTimeRow()">
+                <i class="fa-solid fa-plus"></i> Add Time Slot
+            </button>
+            <button type="submit" class="btn" style="flex: 1; justify-content: center;">
+                <i class="fa-solid fa-save"></i> Save Schedule
+            </button>
+        </div>
+    </form>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+    const currentSchedule = {{ settings.schedule | tojson | safe }};
+    const qaris = {{ qaris | tojson | safe }};
+    const container = document.getElementById('schedule-container');
+
+    function createRowHTML(time, qariVal) {
+        let qariOptions = `<option value="random" ${qariVal === 'random' ? 'selected' : ''}>Random Qari</option>`;
+        qaris.forEach((q, idx) => {
+            qariOptions += `<option value="${idx}" ${qariVal == idx ? 'selected' : ''}>${q.name}</option>`;
+        });
+
+        return `
+            <div class="schedule-row" style="display: flex; gap: 1rem; align-items: center; margin-bottom: 1rem; background: rgba(0,0,0,0.2); padding: 1rem; border-radius: 8px;">
+                <div class="form-group" style="margin-bottom: 0; flex: 1;">
+                    <label style="font-size: 0.8rem;">Time (24H)</label>
+                    <input type="time" class="time-input" value="${time}" required>
+                </div>
+                <div class="form-group" style="margin-bottom: 0; flex: 2;">
+                    <label style="font-size: 0.8rem;">Reciter</label>
+                    <select class="qari-input">
+                        ${qariOptions}
+                    </select>
+                </div>
+                <button type="button" class="btn btn-danger" style="padding: 0.75rem; align-self: flex-end;" onclick="this.parentElement.remove()">
+                    <i class="fa-solid fa-trash"></i>
+                </button>
+            </div>
+        `;
+    }
+
+    function addTimeRow(time = '12:00', qari = 'random') {
+        container.insertAdjacentHTML('beforeend', createRowHTML(time, qari));
+    }
+
+    // Initialize
+    if (currentSchedule && currentSchedule.length > 0) {
+        currentSchedule.forEach(item => addTimeRow(item.time, item.qari));
+    } else {
+        addTimeRow(); // Add at least one empty row
+    }
+
+    async function saveSettings(e) {
+        e.preventDefault();
+        
+        const rows = container.querySelectorAll('.schedule-row');
+        const schedule = [];
+        
+        rows.forEach(row => {
+            schedule.push({
+                time: row.querySelector('.time-input').value,
+                qari: row.querySelector('.qari-input').value
+            });
+        });
+
+        const autoUpload = document.getElementById('autoUploadToggle').checked;
+        const payload = { schedule, auto_upload: autoUpload };
+
+        try {
+            const res = await fetch('/ui/settings', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify(payload)
+            });
+            
+            if (res.ok) {
+                showToast("Settings saved and scheduler restarted!");
+            } else {
+                showToast("Failed to save settings.", "error");
+            }
+        } catch (err) {
+            showToast("Network error.", "error");
+        }
+    }
+</script>
+{% endblock %}

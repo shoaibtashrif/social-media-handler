@@ -27,6 +27,47 @@ logger = logging.getLogger(__name__)
 GRAPH_BASE = "https://graph.facebook.com/v20.0"
 
 
+GRAPH_BASE = "https://graph.facebook.com/v20.0"
+
+
+def _upload_to_temp_host(video_path: str) -> str | None:
+    """
+    Upload the video to a public temporary host to get a direct public URL.
+    This bypasses ngrok's interstitial warning page which blocks Meta's bots.
+    """
+    logger.info("Uploading video to public temporary host (catbox.moe)...")
+    try:
+        with open(video_path, 'rb') as f:
+            resp = requests.post(
+                "https://catbox.moe/user/api.php",
+                data={"reqtype": "fileupload"},
+                files={"fileToUpload": f},
+                timeout=240
+            )
+        resp.raise_for_status()
+        url = resp.text.strip()
+        logger.info("✅ Temp host URL generated (catbox): %s", url)
+        return url
+    except Exception as exc:
+        logger.warning("Failed to upload to catbox.moe: %s. Trying uguu.se...", exc)
+        try:
+            with open(video_path, 'rb') as f:
+                resp = requests.post(
+                    "https://uguu.se/upload.php",
+                    files={"files[]": f},
+                    timeout=240
+                )
+            resp.raise_for_status()
+            data = resp.json()
+            if data.get("success") and data.get("files"):
+                url = data["files"][0]["url"]
+                logger.info("✅ Temp host URL generated (uguu): %s", url)
+                return url
+        except Exception as exc2:
+            logger.error("Failed to upload to fallback temp host (uguu): %s", exc2)
+            
+        return None
+
 # ─────────────────────────────────────────────────────────────
 # Instagram
 # ─────────────────────────────────────────────────────────────
@@ -91,7 +132,7 @@ def _wait_for_container(container_id: str, token: str, max_wait: int = 300) -> s
         resp = requests.get(
             f"{GRAPH_BASE}/{container_id}",
             params={"fields": "status_code,status", "access_token": token},
-            timeout=30,
+            timeout=90,
         )
         data = resp.json()
         status = data.get("status_code", "")
@@ -118,29 +159,44 @@ def post_facebook_video(video_url: str, description: str) -> str | None:
     """
     Post a video to the Facebook Page.
     Returns the post ID on success, None on failure.
+    Retries up to 3 times on timeout.
     """
     token = config.FACEBOOK_PAGE_TOKEN
     page_id = config.FACEBOOK_PAGE_ID
 
     logger.info("FB: Posting video to page %s …", page_id)
-    resp = requests.post(
-        f"{GRAPH_BASE}/{page_id}/videos",
-        params={
-            "file_url": video_url,
-            "description": description,
-            "published": "true",
-            "access_token": token,
-        },
-        timeout=120,
-    )
-    data = resp.json()
-    if "error" in data:
-        logger.error("FB post error: %s", data["error"])
-        return None
+    for attempt in range(3):
+        try:
+            resp = requests.post(
+                f"{GRAPH_BASE}/{page_id}/videos",
+                params={
+                    "file_url": video_url,
+                    "description": description,
+                    "published": "true",
+                    "access_token": token,
+                },
+                timeout=180,
+            )
+            data = resp.json()
+            if "error" in data:
+                logger.error("FB post error: %s", data["error"])
+                return None
 
-    post_id = data.get("id")
-    logger.info("✅ Facebook posted: %s", post_id)
-    return post_id
+            post_id = data.get("id")
+            logger.info("✅ Facebook posted: %s", post_id)
+            return post_id
+
+        except requests.exceptions.ReadTimeout:
+            logger.warning("FB post timed out (attempt %d/3), retrying in 15s…", attempt + 1)
+            if attempt < 2:
+                import time
+                time.sleep(15)
+            else:
+                logger.error("FB post failed after 3 retries (ReadTimeout)")
+                return None
+        except Exception as exc:
+            logger.error("FB post unexpected error: %s", exc)
+            return None
 
 
 # ─────────────────────────────────────────────────────────────
@@ -214,13 +270,19 @@ def post_to_all(video_url: str, video_path: str, caption: str) -> dict:
     """
     logger.info("Posting to Instagram, Facebook, and YouTube …")
     
+    # Bypass ngrok interstitial warning by generating a direct URL
+    direct_video_url = _upload_to_temp_host(video_path)
+    if not direct_video_url:
+        logger.warning("Failed to generate direct URL, falling back to tunnel URL.")
+        direct_video_url = video_url
+        
     # Extract title from caption for YouTube
     yt_title = caption.split('\n')[0]
     # Ensure #Shorts is in the description
     yt_desc = caption + "\n\n#Shorts #Quran"
 
-    ig_id = post_instagram_video(video_url, caption)
-    fb_id = post_facebook_video(video_url, caption)
+    ig_id = post_instagram_video(direct_video_url, caption)
+    fb_id = post_facebook_video(direct_video_url, caption)
     yt_id = post_youtube_shorts(video_path, yt_title, yt_desc)
 
     return {"ig_post_id": ig_id, "fb_post_id": fb_id, "yt_post_id": yt_id}
