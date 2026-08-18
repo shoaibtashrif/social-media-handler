@@ -51,6 +51,7 @@ fi
 
 # 5. Run the application
 echo "======================================"
-echo "🚀 Starting Server..."
+echo "🚀 Starting Server in Background..."
 echo "======================================"
-python3 run.py
+nohup python3 run.py > main.log 2>&1 &
+echo "✅ Server detached! Logs are being written to main.log"

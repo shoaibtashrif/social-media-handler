@@ -85,3 +85,14 @@ async def get_notifications():
 @router.get("/api/logs/stream")
 async def stream_logs():
     return StreamingResponse(log_service.log_streamer(), media_type="text/event-stream")
+
+@router.get("/server-logs")
+async def server_logs():
+    import os
+    from fastapi.responses import PlainTextResponse
+    log_path = "main.log"
+    if not os.path.exists(log_path):
+        return PlainTextResponse("No logs available yet. Ensure server is started with nohup.", status_code=404)
+    with open(log_path, "r") as f:
+        content = f.read()
+    return PlainTextResponse(content)

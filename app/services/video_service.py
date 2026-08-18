@@ -242,7 +242,7 @@ def build_video(
     vid_filter_video = (
         "[0:v]scale=1080:1920:force_original_aspect_ratio=decrease,"
         "pad=1080:1920:(ow-iw)/2:(oh-ih)/2:black,"
-        "hflip,eq=contrast=1.1:brightness=0.02:saturation=1.2,vignette[vout]"
+        "hflip[vout]"
     )
 
     # Calc duration — heavy mode slows audio by 0.75, minor by 0.9

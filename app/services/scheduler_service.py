@@ -34,13 +34,19 @@ def _job_wrapper(qari: str = "random"):
 
 
 def _token_refresh_wrapper():
-    """Daily token refresh — runs at midnight."""
+    """Daily token refresh and log truncation — runs at midnight."""
     from app.services.token_service import refresh_all_tokens
+    import os
     try:
+        if os.path.exists("main.log"):
+            with open("main.log", "w") as f:
+                f.truncate(0)
+            logger.info("Midnight log wipe complete.")
+            
         result = refresh_all_tokens()
         logger.info("Midnight token refresh: %s", result)
     except Exception as exc:
-        logger.error("Midnight token refresh failed: %s", exc)
+        logger.error("Midnight token refresh/log wipe failed: %s", exc)
 
 def _schedule_jobs():
     global _scheduler

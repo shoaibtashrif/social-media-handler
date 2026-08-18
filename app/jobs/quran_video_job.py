@@ -127,23 +127,13 @@ def run_quran_post_job(
             ig_post_id=ig_id,
             fb_post_id=fb_id,
             status=status,
-            notes=f"media={media_path.name} yt={yt_id}",
+            notes=f"media={media_path.name if media_path else ''} yt={yt_id}",
         )
 
         logger.info(
             "✅ Job done — %s | IG: %s | FB: %s | YT: %s",
             status, ig_id or "❌", fb_id or "❌", yt_id or "❌",
         )
-
-        # ── 10. Cleanup ────────────────────────────────────────
-        try:
-            if audio_path and audio_path.exists():
-                os.remove(audio_path)
-            if video_path and video_path.exists():
-                os.remove(video_path)
-            logger.info("🧹 Cleaned up junk audio/video files")
-        except Exception as e:
-            logger.error("Failed to clean up junk files: %s", e)
 
         return {
             "status": status,
@@ -170,6 +160,30 @@ def run_quran_post_job(
         except Exception:
             pass
         raise
+
+    finally:
+        # ── 10. Robust Cleanup ────────────────────────────────────────
+        # This ALWAYS runs, even if the job crashed with an exception.
+        import os
+        import shutil
+        try:
+            if audio_path and audio_path.exists():
+                os.remove(audio_path)
+            if video_path and video_path.exists():
+                os.remove(video_path)
+            # We don't delete media_path if it's from upload_media/, only if it's in temp
+            if media_path and media_path.exists() and "temp" in str(media_path):
+                os.remove(media_path)
+                
+            # Aggressively wipe the generic temp directories (not the cached folders)
+            # The temp video folder only contains output reels.
+            for item in config.VIDEO_DIR.iterdir():
+                if item.is_file():
+                    item.unlink()
+                    
+            logger.info("🧹 Cleaned up junk audio/video files")
+        except Exception as e:
+            logger.error("Failed to clean up junk files: %s", e)
 
 
 # ─────────────────────────────────────────────────────────────
