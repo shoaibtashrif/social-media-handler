@@ -29,15 +29,13 @@ async def dashboard(request: Request):
         db.close()
     
     return templates.TemplateResponse(
-        "dashboard.html",
-        {"request": request, "posts": posts}
+        request=request, name="dashboard.html", context={"request": request, "posts": posts}
     )
 
 @router.get("/upload", response_class=HTMLResponse)
 async def upload_page(request: Request):
     return templates.TemplateResponse(
-        "upload.html",
-        {"request": request}
+        request=request, name="upload.html", context={"request": request}
     )
 
 @router.get("/settings", response_class=HTMLResponse)
@@ -45,8 +43,7 @@ async def settings_page(request: Request):
     current_settings = settings_service.get_all_settings()
     qaris = config.QARIS
     return templates.TemplateResponse(
-        "settings.html",
-        {
+        request=request, name="settings.html", context={
             "request": request,
             "settings": current_settings,
             "qaris": qaris
