@@ -46,7 +46,9 @@ temp/
 *.png
 *.webp
 
-# Empty folder structure tracking
+# But EXPLICITLY ALLOW assets and upload_media contents
+!assets/
+!assets/*
 upload_media/*
 !upload_media/.gitkeep
 
