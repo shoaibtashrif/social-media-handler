@@ -20,7 +20,7 @@ router = APIRouter(prefix="/api", tags=["posting"])
 
 class PostNowRequest(BaseModel):
     media_type: str = "any"
-    ai_prompt: str | None = None
+    prompt: str | None = None
     qari_index: int | None = None
     audio_mode: str = "heavy"  # "heavy", "minor", or "original"
 
@@ -35,7 +35,7 @@ async def post_now(request: PostNowRequest, background_tasks: BackgroundTasks):
     Trigger an immediate Quran video post to Instagram + Facebook.
     Runs in the background; returns immediately with a confirmation.
     """
-    background_tasks.add_task(_run_job, request.media_type, request.ai_prompt, request.qari_index, request.audio_mode)
+    background_tasks.add_task(_run_job, request.media_type, request.prompt, request.qari_index, request.audio_mode)
     return PostNowResponse(message="Quran post job started in background.")
 
 
@@ -50,7 +50,7 @@ def post_now_sync(request: PostNowRequest):
         result = run_quran_post_job(
             qari_index=request.qari_index,
             media_type=request.media_type,
-            ai_prompt=request.ai_prompt,
+            prompt=request.prompt,
             audio_mode=request.audio_mode,
         )
         return PostNowResponse(message="Post complete", details=result)
@@ -81,13 +81,13 @@ def get_verse_pool():
     }
 
 
-def _run_job(media_type: str = "any", ai_prompt: str | None = None, qari_index: int | None = None, audio_mode: str = "heavy"):
+def _run_job(media_type: str = "any", prompt: str | None = None, qari_index: int | None = None, audio_mode: str = "heavy"):
     from app.jobs.quran_video_job import run_quran_post_job
     try:
         run_quran_post_job(
             qari_index=qari_index,
             media_type=media_type,
-            ai_prompt=ai_prompt,
+            prompt=prompt,
             audio_mode=audio_mode,
         )
     except Exception as exc:

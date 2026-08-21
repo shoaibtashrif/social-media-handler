@@ -137,3 +137,55 @@ SURAH_NAMES: dict[int, str] = {
 # ── Ensure temp directories exist ─────────────────────────────
 for _d in [AUDIO_DIR, VIDEO_DIR, LOG_DIR]:
     _d.mkdir(parents=True, exist_ok=True)
+
+# ── 100+ High-Quality Aesthetic/Nature Prompts for Video/Image Search ──
+PROMPT_SUGGESTIONS = [
+    # Nature & Landscapes
+    "rain in forest", "sunset in desert", "ocean waves crashing", "snowy mountain peaks", 
+    "autumn leaves falling", "aurora borealis night sky", "campfire burning at night", 
+    "drone shot over city lights", "calm ocean", "foggy pine forest",
+    "waterfall in jungle", "sunny meadow with flowers", "starry night sky lapse",
+    "clouds moving fast over mountains", "frozen lake in winter", "sand dunes at sunset",
+    "river flowing through canyon", "cherry blossoms in spring", "tropical beach with palm trees",
+    "lightning storm over ocean", "drone over green valley", "misty morning lake",
+    "golden hour wheat field", "snow falling in pine forest", "rainbow over waterfall",
+    "volcano erupting", "coral reef underwater", "jellyfish swimming", "dolphins jumping in ocean",
+    "drone over glacier", "meteor shower night sky", "sunbeams through forest canopy",
+    "field of sunflowers", "desert oasis", "icebergs floating in ocean",
+    "time lapse growing plant", "butterfly landing on flower", "eagle flying over mountains",
+    "horses running in snow", "drone shot of grand canyon",
+    
+    # Islamic/Architectural/Aesthetic
+    "beautiful islamic mosque at sunset", "kaaba in mecca", "prophets mosque in medina",
+    "arabic calligraphy", "quran book open", "person praying silhouette",
+    "lantern glowing in dark", "crescent moon and stars", "islamic geometric patterns",
+    "minaret calling to prayer", "dates on a plate", "tasbih beads close up",
+    "sun rising over mecca", "ramadan aesthetic", "eid celebration lights",
+    "historical islamic architecture", "blue mosque istanbul", "taj mahal sunrise",
+    "alhambra palace reflection", "dome of the rock jerusalem",
+    
+    # Mood/Cinematic
+    "cinematic lighting", "dark moody forest", "neon lights reflections in puddle",
+    "rain drops on window macro", "coffee cup steam morning", "cozy cabin fireplace",
+    "vintage car driving sunset", "train passing by river", "airplane flying through clouds",
+    "hot air balloons cappadocia", "city skyline time lapse", "empty road at night",
+    "walking through autumn forest point of view", "reading a book by the window",
+    "candle flickering in dark", "ink dropping in water slow motion", "smoke billowing aesthetic",
+    "golden hour dust particles floating", "lens flare sunset", "bokeh lights background",
+    
+    # More Nature/Scenery
+    "stormy ocean waves", "peaceful zen garden", "bamboo forest path",
+    "mount fuji cherry blossoms", "northern lights over cabin", "wildflowers blowing in wind",
+    "galaxy milky way time lapse", "moon setting behind mountain", "sun rising over ocean",
+    "waves crashing on rocky cliff", "drone over amazon river", "elephants walking in savanna",
+    "lion resting in grass", "cheetah running slow motion", "birds flocking sunset",
+    "whale breaching ocean", "sea turtle swimming", "manta ray gliding",
+    "coral spawning", "deep sea glowing creatures",
+    
+    # Abstract/Textures
+    "abstract paint swirling", "golden sand texture", "water ripples close up",
+    "crystal prism rainbow light", "clouds from above airplane", "frost patterns on glass",
+    "macroscopic leaf veins", "spider web covered in dew", "dandelion seeds blowing away",
+    "waves on black sand beach", "volcanic lava flowing", "ice crystals forming time lapse",
+    "magnetic fluid dancing", "colored powder explosion slow motion", "glitter falling slow motion"
+]

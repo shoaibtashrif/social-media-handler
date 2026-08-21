@@ -15,6 +15,9 @@ templates = Jinja2Templates(directory="app/templates")
 class ScheduleItem(BaseModel):
     time: str
     qari: str
+    media_type: str = "web_video"
+    prompt: str = ""
+    audio_mode: str = "heavy"
 
 class SettingsPayload(BaseModel):
     schedule: List[ScheduleItem]
@@ -29,7 +32,11 @@ async def dashboard(request: Request):
         db.close()
     
     return templates.TemplateResponse(
-        request=request, name="dashboard.html", context={"request": request, "posts": posts}
+        request=request, name="dashboard.html", context={
+            "request": request, 
+            "posts": posts,
+            "prompt_suggestions": config.PROMPT_SUGGESTIONS
+        }
     )
 
 @router.get("/upload", response_class=HTMLResponse)
@@ -46,7 +53,8 @@ async def settings_page(request: Request):
         request=request, name="settings.html", context={
             "request": request,
             "settings": current_settings,
-            "qaris": qaris
+            "qaris": qaris,
+            "prompt_suggestions": config.PROMPT_SUGGESTIONS
         }
     )
 

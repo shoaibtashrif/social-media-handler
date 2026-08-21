@@ -66,7 +66,7 @@ def _get_duration(path: Path) -> float:
     cmd = ["ffprobe", "-v", "error", "-show_entries", "format=duration", "-of", "default=noprint_wrappers=1:nokey=1", str(path)]
     return float(subprocess.check_output(cmd).decode().strip())
 
-def fetch_web_video(target_duration: int = 50) -> Path:
+def fetch_web_video(target_duration: int = 50, search_prompt: str = "") -> Path:
     """
     Downloads random copyright-free nature videos from Pexels API to create a 
     background video long enough to cover 'target_duration' seconds.
@@ -101,11 +101,14 @@ def fetch_web_video(target_duration: int = 50) -> Path:
     ]
     
     for i in range(clips_needed):
-        remaining_queries = [q for q in PEXELS_QUERIES if q not in used_queries]
-        if not remaining_queries:
-            remaining_queries = PEXELS_QUERIES
-        q = random.choice(remaining_queries)
-        used_queries.add(q)
+        if search_prompt:
+            q = search_prompt
+        else:
+            remaining_queries = [q for q in PEXELS_QUERIES if q not in used_queries]
+            if not remaining_queries:
+                remaining_queries = PEXELS_QUERIES
+            q = random.choice(remaining_queries)
+            used_queries.add(q)
 
         clip_path = config.TEMP_DIR / f"clip_{i}.mp4"
         if clip_path.exists():

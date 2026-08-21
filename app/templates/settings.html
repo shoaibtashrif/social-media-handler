@@ -11,6 +11,12 @@
     </p>
 
     <form id="settings-form" onsubmit="saveSettings(event)">
+        <datalist id="video-prompts">
+            {% for suggestion in prompt_suggestions %}
+            <option value="{{ suggestion }}">
+            {% endfor %}
+        </datalist>
+
         <div style="margin-bottom: 2rem; background: rgba(0,0,0,0.2); padding: 1rem; border-radius: 8px; display: flex; align-items: center; justify-content: space-between;">
             <div>
                 <strong style="display: block; font-size: 1.1rem; margin-bottom: 0.2rem;">Enable Scheduled Auto-Uploads</strong>
@@ -51,38 +57,68 @@
     const qaris = {{ qaris | tojson | safe }};
     const container = document.getElementById('schedule-container');
 
-    function createRowHTML(time, qariVal) {
+    function createRowHTML(time, qariVal, mediaTypeVal, promptVal, audioModeVal) {
         let qariOptions = `<option value="random" ${qariVal === 'random' ? 'selected' : ''}>Random Qari</option>`;
         qaris.forEach((q, idx) => {
             qariOptions += `<option value="${idx}" ${qariVal == idx ? 'selected' : ''}>${q.name}</option>`;
         });
+        
+        let mType = mediaTypeVal || 'web_video';
+        let aMode = audioModeVal || 'heavy';
+        let prompt = promptVal || '';
 
         return `
-            <div class="schedule-row" style="display: flex; gap: 1rem; align-items: center; margin-bottom: 1rem; background: rgba(0,0,0,0.2); padding: 1rem; border-radius: 8px;">
-                <div class="form-group" style="margin-bottom: 0; flex: 1;">
-                    <label style="font-size: 0.8rem;">Time (24H)</label>
-                    <input type="time" class="time-input" value="${time}" required>
+            <div class="schedule-row" style="margin-bottom: 1rem; background: rgba(0,0,0,0.2); padding: 1.5rem; border-radius: 8px; border: 1px solid var(--border);">
+                <div style="display: flex; gap: 1rem; align-items: center; margin-bottom: 1rem;">
+                    <div class="form-group" style="margin-bottom: 0; flex: 1;">
+                        <label style="font-size: 0.8rem;">Time (24H)</label>
+                        <input type="time" class="time-input" value="${time}" required>
+                    </div>
+                    <div class="form-group" style="margin-bottom: 0; flex: 2;">
+                        <label style="font-size: 0.8rem;">Reciter</label>
+                        <select class="qari-input">${qariOptions}</select>
+                    </div>
+                    <button type="button" class="btn btn-danger" style="padding: 0.75rem;" onclick="this.parentElement.parentElement.remove()">
+                        <i class="fa-solid fa-trash"></i>
+                    </button>
                 </div>
-                <div class="form-group" style="margin-bottom: 0; flex: 2;">
-                    <label style="font-size: 0.8rem;">Reciter</label>
-                    <select class="qari-input">
-                        ${qariOptions}
-                    </select>
+                
+                <div style="display: flex; gap: 1rem; margin-bottom: 1rem;">
+                    <div class="form-group" style="margin-bottom: 0; flex: 1;">
+                        <label style="font-size: 0.8rem;">Background Media Type</label>
+                        <select class="media-type-input">
+                            <option value="web_video" ${mType === 'web_video' ? 'selected' : ''}>Auto-Download Nature Video (Multi-Clip Reel)</option>
+                            <option value="video" ${mType === 'video' ? 'selected' : ''}>Pick Random Local Video</option>
+                            <option value="image" ${mType === 'image' ? 'selected' : ''}>Pick Random Local Image</option>
+                            <option value="ai" ${mType === 'ai' ? 'selected' : ''}>Generate AI Image</option>
+                        </select>
+                    </div>
+                    <div class="form-group" style="margin-bottom: 0; flex: 1;">
+                        <label style="font-size: 0.8rem;">Audio Editing Mode</label>
+                        <select class="audio-mode-input">
+                            <option value="heavy" ${aMode === 'heavy' ? 'selected' : ''}>Heavy Editing (Slow + Reverb + Rain)</option>
+                            <option value="minor" ${aMode === 'minor' ? 'selected' : ''}>Minor Editing (Slight Slow + Soft Rain)</option>
+                            <option value="original" ${aMode === 'original' ? 'selected' : ''}>Original Audio</option>
+                        </select>
+                    </div>
                 </div>
-                <button type="button" class="btn btn-danger" style="padding: 0.75rem; align-self: flex-end;" onclick="this.parentElement.remove()">
-                    <i class="fa-solid fa-trash"></i>
-                </button>
+                
+                <div class="form-group" style="margin-bottom: 0;">
+                    <label style="font-size: 0.8rem;">Background Search / Generation Prompt</label>
+                    <input type="text" class="prompt-input" list="video-prompts" value="${prompt.replace(/"/g, '&quot;')}" placeholder="e.g. rain in forest, sunset in desert..." style="width: 100%; padding: 0.75rem; border-radius: 8px; border: 1px solid var(--border); background: rgba(0,0,0,0.1); color: var(--text-primary);">
+                    <small style="color: var(--text-secondary); display: block; margin-top: 0.5rem;">Select from 100+ suggestions or type your own custom search query.</small>
+                </div>
             </div>
         `;
     }
 
-    function addTimeRow(time = '12:00', qari = 'random') {
-        container.insertAdjacentHTML('beforeend', createRowHTML(time, qari));
+    function addTimeRow(time = '12:00', qari = 'random', mediaType = 'web_video', prompt = '', audioMode = 'heavy') {
+        container.insertAdjacentHTML('beforeend', createRowHTML(time, qari, mediaType, prompt, audioMode));
     }
 
     // Initialize
     if (currentSchedule && currentSchedule.length > 0) {
-        currentSchedule.forEach(item => addTimeRow(item.time, item.qari));
+        currentSchedule.forEach(item => addTimeRow(item.time, item.qari, item.media_type, item.prompt, item.audio_mode));
     } else {
         addTimeRow(); // Add at least one empty row
     }
@@ -96,7 +132,10 @@
         rows.forEach(row => {
             schedule.push({
                 time: row.querySelector('.time-input').value,
-                qari: row.querySelector('.qari-input').value
+                qari: row.querySelector('.qari-input').value,
+                media_type: row.querySelector('.media-type-input').value,
+                audio_mode: row.querySelector('.audio-mode-input').value,
+                prompt: row.querySelector('.prompt-input').value
             });
         });
 

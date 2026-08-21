@@ -23,7 +23,7 @@ logger = logging.getLogger(__name__)
 def run_quran_post_job(
     qari_index: int | None = None,
     media_type: str = "any",
-    ai_prompt: str | None = None,
+    prompt: str | None = None,
     audio_mode: str = "heavy",  # "heavy", "minor", or "original"
 ) -> dict:
     """
@@ -76,12 +76,12 @@ def run_quran_post_job(
         logger.info("🎵  Audio ready: %s", audio_path.name)
 
         # ── 5. Build video ────────────────────────────────────
-        if media_type == "ai" and ai_prompt:
+        if media_type == "ai" and prompt:
             logger.info("🤖 Generating AI image background...")
-            media_path = image_gen_service.generate_image(prompt=ai_prompt)
+            media_path = image_gen_service.generate_image(prompt=prompt)
         elif media_type == "web_video":
             logger.info("🌍 Downloading copyright-free background video (multi-clip)...")
-            media_path = video_service.fetch_web_video(target_duration=target_duration)
+            media_path = video_service.fetch_web_video(target_duration=target_duration, search_prompt=prompt)
         else:
             media_path = video_service.pick_random_media(media_type)
 
@@ -179,6 +179,11 @@ def run_quran_post_job(
             # The temp video folder only contains output reels.
             for item in config.VIDEO_DIR.iterdir():
                 if item.is_file():
+                    item.unlink()
+                    
+            # Wipe stray clips in root temp dir
+            for item in config.TEMP_DIR.iterdir():
+                if item.is_file() and item.suffix.lower() in [".mp4", ".mov", ".mp3", ".jpg", ".png", ".webp"]:
                     item.unlink()
                     
             logger.info("🧹 Cleaned up junk audio/video files")

@@ -16,7 +16,7 @@ logger = logging.getLogger(__name__)
 _scheduler: BackgroundScheduler | None = None
 
 
-def _job_wrapper(qari: str = "random"):
+def _job_wrapper(qari: str = "random", media_type: str = "web_video", prompt: str = "", audio_mode: str = "heavy"):
     """Wrapper so import happens at call time (avoids circular imports)."""
     from app.services.settings_service import get_setting
     if not get_setting("auto_upload", True):
@@ -28,7 +28,12 @@ def _job_wrapper(qari: str = "random"):
         qari_index = None
         if qari != "random" and qari.isdigit():
             qari_index = int(qari)
-        run_quran_post_job(qari_index=qari_index)
+        run_quran_post_job(
+            qari_index=qari_index,
+            media_type=media_type,
+            prompt=prompt,
+            audio_mode=audio_mode
+        )
     except Exception as exc:
         logger.error("Scheduled job failed: %s", exc)
 
@@ -69,6 +74,10 @@ def _schedule_jobs():
     for i, item in enumerate(schedule):
         time_str = item.get("time")
         qari = item.get("qari", "random")
+        media_type = item.get("media_type", "web_video")
+        prompt = item.get("prompt", "")
+        audio_mode = item.get("audio_mode", "heavy")
+        
         if not time_str:
             continue
             
@@ -77,13 +86,18 @@ def _schedule_jobs():
             trigger = CronTrigger(hour=int(hour), minute=int(minute), timezone=tz)
             _scheduler.add_job(
                 _job_wrapper,
-                args=[qari],
+                kwargs={
+                    "qari": qari,
+                    "media_type": media_type,
+                    "prompt": prompt,
+                    "audio_mode": audio_mode
+                },
                 trigger=trigger,
                 id=f"quran_post_{i}_{time_str.replace(':', '')}",
                 replace_existing=True,
                 misfire_grace_time=300,  # 5 min grace window
             )
-            logger.info("Scheduled post at %s (%s) with qari=%s", time_str, config.TIMEZONE, qari)
+            logger.info("Scheduled post at %s (%s) with qari=%s, media=%s", time_str, config.TIMEZONE, qari, media_type)
         except Exception as exc:
             logger.error("Could not schedule post at %s: %s", time_str, exc)
 
